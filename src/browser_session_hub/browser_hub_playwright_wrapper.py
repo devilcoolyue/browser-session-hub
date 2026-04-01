@@ -16,6 +16,7 @@ import threading
 from typing import Any
 import urllib.error
 import urllib.request
+from urllib.parse import urlparse, urlunparse
 
 
 DEFAULT_MCP_COMMAND = "npx"
@@ -41,6 +42,7 @@ class WrapperConfig:
     persist_profile: bool
     metadata: dict[str, str]
     touch_interval_seconds: float
+    cdp_host_override: str | None
     mcp_command: str
     mcp_package: str
     mcp_extra_args: list[str]
@@ -171,6 +173,14 @@ def create_parser() -> argparse.ArgumentParser:
         help="Seconds between keepalive calls. Use 0 to disable.",
     )
     parser.add_argument(
+        "--cdp-host-override",
+        default=env.get("BSH_CDP_HOST_OVERRIDE"),
+        help=(
+            "Replace the host part of the returned CDP endpoint before launching "
+            "Playwright MCP, for example 127.0.0.1."
+        ),
+    )
+    parser.add_argument(
         "--metadata-json",
         default=env.get("BSH_METADATA_JSON"),
         help="JSON object merged into Browser Session Hub session metadata.",
@@ -219,6 +229,7 @@ def build_config(args: argparse.Namespace) -> WrapperConfig:
         persist_profile=args.persist_profile,
         metadata=metadata,
         touch_interval_seconds=args.touch_interval,
+        cdp_host_override=args.cdp_host_override,
         mcp_command=args.mcp_command,
         mcp_package=args.mcp_package,
         mcp_extra_args=extra_args,
@@ -266,6 +277,71 @@ def _decode_http_error(exc: urllib.error.HTTPError) -> str:
     if isinstance(payload, dict) and payload.get("detail"):
         return f"HTTP {exc.code} from {exc.url}: {payload['detail']}"
     return f"HTTP {exc.code} from {exc.url}: {payload!r}"
+
+
+def _replace_url_host(url: str, host: str) -> str:
+    parsed = urlparse(url)
+    if not parsed.scheme or parsed.hostname is None:
+        raise WrapperError(f"Invalid URL: {url}")
+    netloc = host
+    if parsed.port is not None:
+        netloc = f"{host}:{parsed.port}"
+    return urlunparse(parsed._replace(netloc=netloc))
+
+
+def _build_cdp_version_url(cdp_http_endpoint: str) -> str:
+    return f"{cdp_http_endpoint.rstrip('/')}/json/version"
+
+
+def _probe_cdp_endpoint(cdp_http_endpoint: str, timeout_seconds: float = 3.0) -> bool:
+    request = urllib.request.Request(_build_cdp_version_url(cdp_http_endpoint))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = _decode_json_response(response)
+    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+        return False
+    return isinstance(payload, dict) and "webSocketDebuggerUrl" in payload
+
+
+def resolve_cdp_http_endpoint(
+    config: WrapperConfig,
+    cdp_http_endpoint: str,
+) -> str:
+    """Choose the CDP endpoint that Playwright MCP should use."""
+    if config.cdp_host_override:
+        resolved = _replace_url_host(cdp_http_endpoint, config.cdp_host_override)
+        logger.info(
+            "Overriding CDP endpoint host %s -> %s",
+            cdp_http_endpoint,
+            resolved,
+        )
+        return resolved
+
+    if _probe_cdp_endpoint(cdp_http_endpoint):
+        return cdp_http_endpoint
+
+    parsed = urlparse(cdp_http_endpoint)
+    host = parsed.hostname
+    if host in {None, "127.0.0.1", "localhost"}:
+        raise WrapperError(
+            f"CDP endpoint is not reachable: {_build_cdp_version_url(cdp_http_endpoint)}"
+        )
+
+    for candidate_host in ("127.0.0.1", "localhost"):
+        candidate = _replace_url_host(cdp_http_endpoint, candidate_host)
+        if not _probe_cdp_endpoint(candidate):
+            continue
+        logger.warning(
+            "CDP endpoint %s was unreachable; using local endpoint %s instead",
+            cdp_http_endpoint,
+            candidate,
+        )
+        return candidate
+
+    raise WrapperError(
+        "CDP endpoint is not reachable and no local fallback worked: "
+        f"{_build_cdp_version_url(cdp_http_endpoint)}"
+    )
 
 
 def api_request(
@@ -330,9 +406,13 @@ class BrowserHubPlaywrightWrapper:
         )
         self._install_signal_handlers()
         self._start_touch_thread()
-        command = build_playwright_command(
+        resolved_cdp_http_endpoint = resolve_cdp_http_endpoint(
             self._config,
             str(session["cdp_http_endpoint"]),
+        )
+        command = build_playwright_command(
+            self._config,
+            resolved_cdp_http_endpoint,
         )
         logger.info("Launching Playwright MCP command: %s", shlex.join(command))
         try:

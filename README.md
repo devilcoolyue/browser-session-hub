@@ -318,6 +318,34 @@ Point the MCP server to the returned `cdp_http_endpoint`:
 }
 ```
 
+If your orchestrator runs on the same machine as Browser Session Hub and Chromium only
+exposes DevTools on loopback, use the wrapper and force the MCP-side CDP host to
+`127.0.0.1`:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/data/app/browser-session-hub/.venv/bin/browser-hub-playwright-wrapper",
+      "args": [
+        "--base-url",
+        "http://127.0.0.1:8091",
+        "--owner-id",
+        "agent:default",
+        "--touch-interval",
+        "20",
+        "--start-url",
+        "about:blank",
+        "--cdp-host-override",
+        "127.0.0.1",
+        "--mcp-arg=--browser",
+        "--mcp-arg=chromium"
+      ]
+    }
+  }
+}
+```
+
 ### Preview
 
 The dashboard embeds the returned `preview_url` in an iframe. You can also open it directly in a new tab.
