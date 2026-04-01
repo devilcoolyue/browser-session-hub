@@ -225,6 +225,8 @@ class BrowserSessionManager:
             preview_url = (
                 f"{self._config.public_scheme}://{self._config.public_host}:"
                 f"{ports.novnc_port}/vnc.html?autoconnect=1&resize=remote&reconnect=1"
+                f"&quality={self._config.vnc_quality}"
+                f"&compression={self._config.vnc_compress}&show_dot=1"
             )
             session = ManagedSession(
                 session_id=session_id,
@@ -456,7 +458,13 @@ class BrowserSessionManager:
             "-forever",
             "-shared",
             "-nopw",
+            "-quality",
+            str(self._config.vnc_quality),
+            "-compress",
+            str(self._config.vnc_compress),
         ]
+        if self._config.vnc_noxdamage:
+            command.append("-noxdamage")
         process = subprocess.Popen(
             command,
             stdout=log_file,

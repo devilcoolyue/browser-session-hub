@@ -97,6 +97,9 @@ class BrowserSessionHubConfig:
     no_sandbox: bool
     browser_extra_args: list[str]
     default_start_url: str
+    vnc_quality: int
+    vnc_compress: int
+    vnc_noxdamage: bool
 
     @classmethod
     def from_env(cls) -> "BrowserSessionHubConfig":
@@ -216,6 +219,16 @@ class BrowserSessionHubConfig:
             default_start_url=os.environ.get(
                 "BROWSER_SESSION_HUB_DEFAULT_START_URL",
                 "about:blank",
+            ),
+            vnc_quality=int(
+                os.environ.get("BROWSER_SESSION_HUB_VNC_QUALITY", "9")
+            ),
+            vnc_compress=int(
+                os.environ.get("BROWSER_SESSION_HUB_VNC_COMPRESS", "0")
+            ),
+            vnc_noxdamage=_parse_bool(
+                os.environ.get("BROWSER_SESSION_HUB_VNC_NOXDAMAGE"),
+                default=True,
             ),
         )
 
