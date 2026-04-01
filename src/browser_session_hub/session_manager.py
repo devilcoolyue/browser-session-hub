@@ -29,6 +29,30 @@ from .process_utils import (
 
 logger = logging.getLogger(__name__)
 
+_x11vnc_flag_cache: dict[str, set[str]] = {}
+
+
+def _x11vnc_supports_flag(x11vnc_path: str, flag: str) -> bool:
+    """Check whether the installed x11vnc binary recognises *flag*."""
+    if x11vnc_path not in _x11vnc_flag_cache:
+        try:
+            result = subprocess.run(
+                [x11vnc_path, "-opts"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            opts_output = result.stdout + result.stderr
+            flags = {
+                token.strip()
+                for token in opts_output.split()
+                if token.strip().startswith("-")
+            }
+            _x11vnc_flag_cache[x11vnc_path] = flags
+        except Exception:
+            _x11vnc_flag_cache[x11vnc_path] = set()
+    return flag in _x11vnc_flag_cache[x11vnc_path]
+
 
 class SessionManagerError(RuntimeError):
     """Raised when session operations fail."""
@@ -224,7 +248,7 @@ class BrowserSessionManager:
             )
             preview_url = (
                 f"{self._config.public_scheme}://{self._config.public_host}:"
-                f"{ports.novnc_port}/vnc.html?autoconnect=1&resize=remote&reconnect=1"
+                f"{ports.novnc_port}/vnc.html?autoconnect=1&resize=scale&reconnect=1"
                 f"&quality={self._config.vnc_quality}"
                 f"&compression={self._config.vnc_compress}&show_dot=1"
             )
@@ -458,11 +482,11 @@ class BrowserSessionManager:
             "-forever",
             "-shared",
             "-nopw",
-            "-quality",
-            str(self._config.vnc_quality),
-            "-compress",
-            str(self._config.vnc_compress),
         ]
+        if _x11vnc_supports_flag(self._config.x11vnc_path, "-quality"):
+            command.extend(["-quality", str(self._config.vnc_quality)])
+        if _x11vnc_supports_flag(self._config.x11vnc_path, "-compress"):
+            command.extend(["-compress", str(self._config.vnc_compress)])
         if self._config.vnc_noxdamage:
             command.append("-noxdamage")
         process = subprocess.Popen(
