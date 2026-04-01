@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Browser Session Hub</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1>Browser Session Hub</h1>
+          <button id="refreshButton" type="button">Refresh</button>
+        </div>
+
+        <section class="panel">
+          <h2>Create Session</h2>
+          <form id="createForm" class="stack">
+            <label>
+              Owner ID
+              <input id="ownerId" name="ownerId" type="text" value="anonymous" />
+            </label>
+
+            <label>
+              Start URL
+              <input id="startUrl" name="startUrl" type="url" placeholder="https://example.com" />
+            </label>
+
+            <div class="row">
+              <label>
+                Width
+                <input id="viewportWidth" name="viewportWidth" type="number" min="320" max="3840" placeholder="1440" />
+              </label>
+              <label>
+                Height
+                <input id="viewportHeight" name="viewportHeight" type="number" min="240" max="2160" placeholder="900" />
+              </label>
+            </div>
+
+            <label class="checkbox">
+              <input id="persistProfile" name="persistProfile" type="checkbox" />
+              Reuse a persistent profile for this owner
+            </label>
+
+            <button id="createButton" type="submit">Start Session</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Sessions</h2>
+            <span id="sessionCount">0</span>
+          </div>
+          <div id="sessionList" class="session-list"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Dependencies</h2>
+          <div id="dependencyList" class="dependency-list"></div>
+        </section>
+      </aside>
+
+      <main class="content">
+        <section class="detail-card">
+          <div class="detail-header">
+            <div>
+              <h2 id="detailTitle">No Session Selected</h2>
+              <p id="detailSubtitle">Create or select a session to inspect its CDP and preview endpoints.</p>
+            </div>
+            <button id="stopButton" type="button" disabled>Stop Session</button>
+          </div>
+
+          <div id="detailGrid" class="detail-grid hidden">
+            <div class="detail-item">
+              <span class="label">Owner</span>
+              <code id="detailOwner"></code>
+            </div>
+            <div class="detail-item">
+              <span class="label">Status</span>
+              <code id="detailStatus"></code>
+            </div>
+            <div class="detail-item">
+              <span class="label">CDP HTTP</span>
+              <code id="detailCdpHttp"></code>
+            </div>
+            <div class="detail-item">
+              <span class="label">CDP WS</span>
+              <code id="detailCdpWs"></code>
+            </div>
+            <div class="detail-item">
+              <span class="label">Preview URL</span>
+              <code id="detailPreviewUrl"></code>
+            </div>
+            <div class="detail-item">
+              <span class="label">Working Dir</span>
+              <code id="detailWorkingDir"></code>
+            </div>
+          </div>
+        </section>
+
+        <section class="preview-card">
+          <div class="preview-header">
+            <h2>Live Preview</h2>
+            <a id="previewLink" href="#" target="_blank" rel="noreferrer">Open noVNC in new tab</a>
+          </div>
+          <div class="preview-frame">
+            <iframe id="previewFrame" title="Browser Preview"></iframe>
+            <div id="previewEmpty" class="preview-empty">
+              noVNC preview will appear here after you select a running session.
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="sessionItemTemplate">
+      <button type="button" class="session-item">
+        <span class="session-item-title"></span>
+        <span class="session-item-meta"></span>
+      </button>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+  </html>

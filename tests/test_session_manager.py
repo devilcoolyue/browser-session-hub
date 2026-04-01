@@ -1,0 +1,115 @@
+from pathlib import Path
+
+import pytest
+
+from browser_session_hub.config import BrowserSessionHubConfig
+from browser_session_hub.models import CreateSessionRequest, SessionStatus
+from browser_session_hub.session_manager import BrowserSessionManager, SessionManagerError
+
+
+def make_config(tmp_path: Path) -> BrowserSessionHubConfig:
+    return BrowserSessionHubConfig(
+        host="127.0.0.1",
+        port=8091,
+        public_scheme="http",
+        public_host="127.0.0.1",
+        sessions_root=tmp_path / "sessions",
+        host_root=tmp_path / "host-root",
+        chrome_path=str(tmp_path / "chrome"),
+        xvfb_path=str(tmp_path / "Xvfb"),
+        openbox_path=str(tmp_path / "openbox"),
+        x11vnc_path=str(tmp_path / "x11vnc"),
+        novnc_proxy_path=str(tmp_path / "novnc_proxy"),
+        cdp_bind_host="127.0.0.1",
+        cdp_port_range=(9500, 9510),
+        vnc_port_range=(6510, 6520),
+        novnc_port_range=(6610, 6620),
+        display_range=(401, 410),
+        viewport_width=1440,
+        viewport_height=900,
+        idle_timeout_seconds=5,
+        no_sandbox=False,
+        browser_extra_args=[],
+        default_start_url="about:blank",
+    )
+
+
+def fake_start_factory(config: BrowserSessionHubConfig):
+    def fake_start(session):
+        session.cdp_ws_endpoint = (
+            f"{config.websocket_scheme}://{config.public_host}:"
+            f"{session.ports.cdp_port}/devtools/browser/mock"
+        )
+
+    return fake_start
+
+
+def fake_stop(manager: BrowserSessionManager):
+    def _stop(session, keep_record):
+        manager._release_session_resources_locked(session)
+        session.status = SessionStatus.stopped
+        session.processes.clear()
+        if not keep_record:
+            manager._sessions.pop(session.session_id, None)
+
+    return _stop
+
+
+def test_create_session_assigns_unique_runtime(monkeypatch, tmp_path: Path):
+    manager = BrowserSessionManager(make_config(tmp_path))
+    monkeypatch.setattr("browser_session_hub.session_manager.is_port_available", lambda *_: True)
+    monkeypatch.setattr("browser_session_hub.session_manager.is_display_available", lambda *_: True)
+    monkeypatch.setattr(manager, "_assert_dependencies_ready", lambda: None)
+    monkeypatch.setattr(manager, "_start_session_locked", fake_start_factory(manager._config))
+    monkeypatch.setattr(manager, "_stop_session_locked", fake_stop(manager))
+
+    summary = manager.create_session(
+        CreateSessionRequest(owner_id="alice", start_url="https://example.com")
+    )
+
+    assert summary.owner_id == "alice"
+    assert summary.status == SessionStatus.running
+    assert summary.start_url == "https://example.com"
+    assert summary.cdp_http_endpoint.startswith("http://127.0.0.1:95")
+    assert summary.preview_url.startswith("http://127.0.0.1:66")
+    assert summary.profile_dir.endswith(f"{summary.session_id}/profile")
+
+    manager.stop_session(summary.session_id)
+    assert manager.list_sessions() == []
+
+
+def test_persistent_profile_blocks_concurrent_reuse(monkeypatch, tmp_path: Path):
+    manager = BrowserSessionManager(make_config(tmp_path))
+    monkeypatch.setattr("browser_session_hub.session_manager.is_port_available", lambda *_: True)
+    monkeypatch.setattr("browser_session_hub.session_manager.is_display_available", lambda *_: True)
+    monkeypatch.setattr(manager, "_assert_dependencies_ready", lambda: None)
+    monkeypatch.setattr(manager, "_start_session_locked", fake_start_factory(manager._config))
+    monkeypatch.setattr(manager, "_stop_session_locked", fake_stop(manager))
+
+    first = manager.create_session(
+        CreateSessionRequest(owner_id="bob", persist_profile=True)
+    )
+
+    with pytest.raises(SessionManagerError):
+        manager.create_session(
+            CreateSessionRequest(owner_id="bob", persist_profile=True)
+        )
+
+    manager.stop_session(first.session_id)
+
+
+def test_cleanup_idle_sessions_stops_old_sessions(monkeypatch, tmp_path: Path):
+    manager = BrowserSessionManager(make_config(tmp_path))
+    monkeypatch.setattr("browser_session_hub.session_manager.is_port_available", lambda *_: True)
+    monkeypatch.setattr("browser_session_hub.session_manager.is_display_available", lambda *_: True)
+    monkeypatch.setattr(manager, "_assert_dependencies_ready", lambda: None)
+    monkeypatch.setattr(manager, "_start_session_locked", fake_start_factory(manager._config))
+    monkeypatch.setattr(manager, "_stop_session_locked", fake_stop(manager))
+
+    summary = manager.create_session(CreateSessionRequest(owner_id="carol"))
+    manager._sessions[summary.session_id].last_activity -= 60
+
+    stopped = manager.cleanup_idle_sessions()
+
+    assert stopped == [summary.session_id]
+    assert manager.list_sessions() == []
