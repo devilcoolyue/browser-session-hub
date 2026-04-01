@@ -25,6 +25,8 @@ def test_config_from_env_parses_ranges_and_paths(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("BROWSER_SESSION_HUB_HOST", "0.0.0.0")
     monkeypatch.setenv("BROWSER_SESSION_HUB_SESSIONS_ROOT", str(tmp_path / "sessions"))
     monkeypatch.setenv("BROWSER_SESSION_HUB_HOST_ROOT", str(tmp_path / "host-root"))
+    monkeypatch.setenv("BROWSER_SESSION_HUB_LOG_FILE", str(tmp_path / "custom" / "hub.log"))
+    monkeypatch.setenv("BROWSER_SESSION_HUB_PID_FILE", str(tmp_path / "custom" / "hub.pid"))
 
     config = BrowserSessionHubConfig.from_env()
 
@@ -36,3 +38,7 @@ def test_config_from_env_parses_ranges_and_paths(monkeypatch, tmp_path: Path):
     assert config.public_host == "127.0.0.1"
     assert config.sessions_root == tmp_path / "sessions"
     assert config.host_root == tmp_path / "host-root"
+    assert config.log_dir == tmp_path / "host-root" / "logs"
+    assert config.run_dir == tmp_path / "host-root" / "run"
+    assert config.log_file == tmp_path / "custom" / "hub.log"
+    assert config.pid_file == tmp_path / "custom" / "hub.pid"

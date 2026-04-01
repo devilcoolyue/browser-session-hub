@@ -77,6 +77,10 @@ class BrowserSessionHubConfig:
     public_host: str
     sessions_root: Path
     host_root: Path
+    log_dir: Path
+    run_dir: Path
+    log_file: Path
+    pid_file: Path
     chrome_path: str
     xvfb_path: str
     openbox_path: str | None
@@ -109,6 +113,18 @@ class BrowserSessionHubConfig:
                 str(_default_data_root()),
             )
         )
+        log_dir = Path(
+            os.environ.get(
+                "BROWSER_SESSION_HUB_LOG_DIR",
+                str(host_root / "logs"),
+            )
+        )
+        run_dir = Path(
+            os.environ.get(
+                "BROWSER_SESSION_HUB_RUN_DIR",
+                str(host_root / "run"),
+            )
+        )
         public_host = os.environ.get(
             "BROWSER_SESSION_HUB_PUBLIC_HOST",
             _default_public_host(host),
@@ -123,6 +139,20 @@ class BrowserSessionHubConfig:
             public_host=public_host,
             sessions_root=sessions_root,
             host_root=host_root,
+            log_dir=log_dir,
+            run_dir=run_dir,
+            log_file=Path(
+                os.environ.get(
+                    "BROWSER_SESSION_HUB_LOG_FILE",
+                    str(log_dir / "browser-session-hub.log"),
+                )
+            ),
+            pid_file=Path(
+                os.environ.get(
+                    "BROWSER_SESSION_HUB_PID_FILE",
+                    str(run_dir / "browser-session-hub.pid"),
+                )
+            ),
             chrome_path=_resolve_required_binary(
                 "BROWSER_SESSION_HUB_CHROME_PATH",
                 "google-chrome",

@@ -153,6 +153,12 @@ pip install -e .
 browser-session-hub
 ```
 
+后台启动：
+
+```bash
+browser-session-hub --daemon
+```
+
 默认服务地址：
 
 ```text
@@ -160,6 +166,15 @@ http://127.0.0.1:8091
 ```
 
 在 Linux 上启动前，请确认 `google-chrome` 或 `chromium`、`Xvfb`、`x11vnc`、`novnc_proxy` 都能在 `PATH` 中找到，或者通过对应的 `BROWSER_SESSION_HUB_*_PATH` 环境变量显式指定。
+
+daemon 模式默认路径：
+
+```text
+日志文件: ~/.browser-session-hub/logs/browser-session-hub.log
+pid 文件: ~/.browser-session-hub/run/browser-session-hub.pid
+```
+
+执行 `browser-session-hub --daemon` 后，命令行会直接输出最终使用的日志文件和 pid 文件路径。
 
 ## 环境变量
 
@@ -173,6 +188,10 @@ http://127.0.0.1:8091
 | `BROWSER_SESSION_HUB_PUBLIC_HOST` | 从 host 推导 | 返回 URL 时使用的主机名 |
 | `BROWSER_SESSION_HUB_SESSIONS_ROOT` | `~/.browser-session-hub/sessions` | 会话工作目录根路径 |
 | `BROWSER_SESSION_HUB_HOST_ROOT` | `~/.browser-session-hub` | 宿主机共享根路径，持久 profile 也放这里 |
+| `BROWSER_SESSION_HUB_LOG_DIR` | `~/.browser-session-hub/logs` | 服务日志默认目录 |
+| `BROWSER_SESSION_HUB_RUN_DIR` | `~/.browser-session-hub/run` | pid 和运行时文件默认目录 |
+| `BROWSER_SESSION_HUB_LOG_FILE` | `~/.browser-session-hub/logs/browser-session-hub.log` | `--daemon` 使用的日志文件 |
+| `BROWSER_SESSION_HUB_PID_FILE` | `~/.browser-session-hub/run/browser-session-hub.pid` | `--daemon` 使用的 pid 文件 |
 | `BROWSER_SESSION_HUB_CDP_BIND_HOST` | `127.0.0.1` | Chrome 的 CDP 监听地址 |
 | `BROWSER_SESSION_HUB_CDP_PORT_RANGE` | `9333-9432` | 会话可分配的 CDP 端口范围 |
 | `BROWSER_SESSION_HUB_VNC_PORT_RANGE` | `5901-6000` | 内部 VNC 端口范围 |
@@ -190,6 +209,24 @@ http://127.0.0.1:8091
 - `BROWSER_SESSION_HUB_OPENBOX_PATH`
 - `BROWSER_SESSION_HUB_X11VNC_PATH`
 - `BROWSER_SESSION_HUB_NOVNC_PROXY_PATH`
+
+## Daemon 启动示例
+
+带公网地址和 root 场景 `--no-sandbox` 的后台启动示例：
+
+```bash
+export BROWSER_SESSION_HUB_PUBLIC_HOST=180.184.84.200
+export BROWSER_SESSION_HUB_NO_SANDBOX=true
+browser-session-hub --daemon
+```
+
+自定义日志和 pid 路径的示例：
+
+```bash
+export BROWSER_SESSION_HUB_LOG_FILE=/var/log/browser-session-hub/service.log
+export BROWSER_SESSION_HUB_PID_FILE=/var/run/browser-session-hub.pid
+browser-session-hub --daemon
+```
 
 ## 部署检查清单
 

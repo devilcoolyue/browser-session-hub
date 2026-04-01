@@ -155,6 +155,12 @@ If the target host has an older `pip` or `setuptools`, the repository also inclu
 browser-session-hub
 ```
 
+Run in the background:
+
+```bash
+browser-session-hub --daemon
+```
+
 Default service URL:
 
 ```text
@@ -162,6 +168,15 @@ http://127.0.0.1:8091
 ```
 
 Before starting the service on Linux, make sure `google-chrome` or `chromium`, `Xvfb`, `x11vnc`, and `novnc_proxy` are installed and resolvable on `PATH`, or set the corresponding `BROWSER_SESSION_HUB_*_PATH` environment variables.
+
+Default daemon paths:
+
+```text
+log file: ~/.browser-session-hub/logs/browser-session-hub.log
+pid file: ~/.browser-session-hub/run/browser-session-hub.pid
+```
+
+The `--daemon` command prints the resolved log file and pid file paths after the background process is created.
 
 ## Environment Variables
 
@@ -175,6 +190,10 @@ Key settings:
 | `BROWSER_SESSION_HUB_PUBLIC_HOST` | derived from host | Hostname used in returned URLs |
 | `BROWSER_SESSION_HUB_SESSIONS_ROOT` | `~/.browser-session-hub/sessions` | Session working directories |
 | `BROWSER_SESSION_HUB_HOST_ROOT` | `~/.browser-session-hub` | Shared root for persistent profiles |
+| `BROWSER_SESSION_HUB_LOG_DIR` | `~/.browser-session-hub/logs` | Default directory for service logs |
+| `BROWSER_SESSION_HUB_RUN_DIR` | `~/.browser-session-hub/run` | Default directory for pid and runtime files |
+| `BROWSER_SESSION_HUB_LOG_FILE` | `~/.browser-session-hub/logs/browser-session-hub.log` | Log file used by `--daemon` |
+| `BROWSER_SESSION_HUB_PID_FILE` | `~/.browser-session-hub/run/browser-session-hub.pid` | Pid file used by `--daemon` |
 | `BROWSER_SESSION_HUB_CDP_BIND_HOST` | `127.0.0.1` | CDP listen host for Chrome |
 | `BROWSER_SESSION_HUB_CDP_PORT_RANGE` | `9333-9432` | CDP ports assigned to sessions |
 | `BROWSER_SESSION_HUB_VNC_PORT_RANGE` | `5901-6000` | Internal VNC ports |
@@ -192,6 +211,24 @@ Binary overrides:
 - `BROWSER_SESSION_HUB_OPENBOX_PATH`
 - `BROWSER_SESSION_HUB_X11VNC_PATH`
 - `BROWSER_SESSION_HUB_NOVNC_PROXY_PATH`
+
+## Daemon Example
+
+Example with explicit public host, root-safe Chrome launch, and daemon mode:
+
+```bash
+export BROWSER_SESSION_HUB_PUBLIC_HOST=180.184.84.200
+export BROWSER_SESSION_HUB_NO_SANDBOX=true
+browser-session-hub --daemon
+```
+
+Example with custom daemon log and pid locations:
+
+```bash
+export BROWSER_SESSION_HUB_LOG_FILE=/var/log/browser-session-hub/service.log
+export BROWSER_SESSION_HUB_PID_FILE=/var/run/browser-session-hub.pid
+browser-session-hub --daemon
+```
 
 ## Deployment Checklist
 
