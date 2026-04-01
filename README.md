@@ -49,6 +49,52 @@ The original `browser-live-view` project is optimized around CDP screencast fram
 - Minimal dashboard for creating, selecting, and stopping sessions
 - API-first design so another orchestrator can create sessions programmatically
 
+## How This Fits With CoPaw, Playwright MCP, and Other Agents
+
+These pieces solve different problems and should not be conflated:
+
+- Browser Session Hub creates and manages isolated browser runtimes.
+- Playwright MCP is the automation adapter that talks to an existing browser over CDP.
+- CoPaw or any other agent platform decides when to create, renew, and destroy browser sessions, and which user or agent owns them.
+
+In a typical deployment the data flow looks like this:
+
+```text
+agent platform (CoPaw, custom orchestrator, etc.)
+    -> POST /api/sessions
+    -> receives session_id + cdp_http_endpoint + preview_url
+    -> launches Playwright MCP against that cdp_http_endpoint
+    -> shows preview_url to humans
+    -> POST /api/sessions/{id}/touch while active
+    -> DELETE /api/sessions/{id} when done
+```
+
+This project is intentionally not a browser-control MCP server by itself. It is the browser session layer underneath Playwright MCP.
+
+If your orchestrator can update MCP client config dynamically, it can directly create a session and then start or reload Playwright MCP with the returned `cdp_http_endpoint`.
+
+If your orchestrator only supports a static `stdio` MCP command and you do not want to modify its source code, use the included `browser-hub-playwright-wrapper`. The wrapper creates the session first and then launches `@playwright/mcp` with the correct dynamic endpoint.
+
+## Isolation Model
+
+The isolation boundary is controlled by the Browser Session Hub request, not by Playwright MCP itself.
+
+- `session_id` is a runtime identifier for one concrete browser session.
+- `owner_id` is the logical isolation key chosen by the orchestrator.
+- `persist_profile=false` means an ephemeral browser profile under the session working directory.
+- `persist_profile=true` means the profile is reused for the same `owner_id`, but that profile becomes exclusive while the session is running.
+
+Recommended `owner_id` patterns:
+
+- one browser per agent: `agent:{agent_id}`
+- one browser per end user inside an agent system: `user:{user_id}:agent:{agent_id}`
+- one browser per user conversation: `user:{user_id}:agent:{agent_id}:chat:{chat_id}`
+
+Important constraint:
+
+- a static MCP config cannot derive a different `owner_id` for each end user at runtime
+- if you need per-user isolation under a single agent and the platform cannot rewrite MCP args dynamically, you need a thin orchestration layer or a dedicated MCP server that exposes `create_session` / `touch_session` / `stop_session`
+
 ## Linux Deployment Requirements
 
 Deploying this service on Linux requires both Python dependencies and host-level GUI / remote-desktop components.
@@ -212,6 +258,13 @@ Binary overrides:
 - `BROWSER_SESSION_HUB_X11VNC_PATH`
 - `BROWSER_SESSION_HUB_NOVNC_PROXY_PATH`
 
+Behavior details that matter in real integrations:
+
+- `BROWSER_SESSION_HUB_PUBLIC_HOST` controls the host embedded into returned URLs such as `cdp_http_endpoint` and `preview_url`.
+- `BROWSER_SESSION_HUB_CDP_BIND_HOST` controls which interface Chrome is asked to bind for DevTools.
+- Those two values are related, but they are not the same responsibility.
+- In real deployments some Chromium builds still expose DevTools on loopback even when launched with `--remote-debugging-address=0.0.0.0`. In that case the wrapper's `--cdp-host-override 127.0.0.1` is the correct fix for a local orchestrator.
+
 ## Daemon Example
 
 Example with explicit public host, root-safe Chrome launch, and daemon mode:
@@ -318,6 +371,33 @@ Point the MCP server to the returned `cdp_http_endpoint`:
 }
 ```
 
+### Generic orchestration flow
+
+The correct integration pattern is:
+
+1. Create a session with `POST /api/sessions`.
+2. Read `session.cdp_http_endpoint` from the response.
+3. Start Playwright MCP with `--cdp-endpoint <that value>`.
+4. Display `session.preview_url` for human observation or takeover.
+5. If `BROWSER_SESSION_HUB_IDLE_TIMEOUT` is enabled, keep the session alive with `POST /api/sessions/{session_id}/touch`.
+6. Stop the session with `DELETE /api/sessions/{session_id}`.
+
+Do not hardcode CDP ports like `9333` or `9334`. Ports are allocated dynamically per session.
+
+### Wrapper for static MCP configs
+
+When the agent platform only accepts a static `stdio` MCP entry, register the wrapper instead of registering `npx @playwright/mcp` directly.
+
+The wrapper:
+
+- calls `POST /api/sessions`
+- optionally rewrites the returned CDP host for local use
+- starts `@playwright/mcp` with the correct `--cdp-endpoint`
+- optionally keeps the session alive with `/touch`
+- deletes the session on exit
+
+This is not a long-running system daemon. It is a child process started by the agent platform when the MCP client connects.
+
 If your orchestrator runs on the same machine as Browser Session Hub and Chromium only
 exposes DevTools on loopback, use the wrapper and force the MCP-side CDP host to
 `127.0.0.1`:
@@ -346,6 +426,56 @@ exposes DevTools on loopback, use the wrapper and force the MCP-side CDP host to
 }
 ```
 
+For CoPaw, keep the MCP client key as `playwright`. In real deployments the model may see tool names such as `browser_navigate`, `browser_snapshot`, and `browser_click`, but those can still be backed by the `playwright` MCP client. Using the `playwright` key keeps CoPaw aligned with its browser skill and tool pool selection.
+
+If `npx` is not on the service `PATH`, pass the absolute path with `--mcp-command`, for example:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/data/app/browser-session-hub/.venv/bin/browser-hub-playwright-wrapper",
+      "args": [
+        "--base-url",
+        "http://127.0.0.1:8091",
+        "--owner-id",
+        "agent:default",
+        "--touch-interval",
+        "20",
+        "--start-url",
+        "about:blank",
+        "--cdp-host-override",
+        "127.0.0.1",
+        "--mcp-command",
+        "/root/.nvm/versions/node/v22.22.2/bin/npx",
+        "--mcp-arg=--browser",
+        "--mcp-arg=chromium"
+      ]
+    }
+  }
+}
+```
+
+### Wrapper CLI and environment reference
+
+The wrapper accepts both CLI flags and environment variables:
+
+| CLI flag | Environment variable | Purpose |
+| --- | --- | --- |
+| `--base-url` | `BSH_BASE_URL` | Browser Session Hub base URL |
+| `--owner-id` | `BSH_OWNER_ID` | Logical isolation key |
+| `--start-url` | `BSH_START_URL` | Initial browser page |
+| `--viewport-width` | `BSH_VIEWPORT_WIDTH` | Initial browser width |
+| `--viewport-height` | `BSH_VIEWPORT_HEIGHT` | Initial browser height |
+| `--persist-profile` / `--no-persist-profile` | `BSH_PERSIST_PROFILE` | Whether to reuse the profile for the same owner |
+| `--touch-interval` | `BSH_TOUCH_INTERVAL` | Seconds between keepalive calls; `0` disables touching |
+| `--cdp-host-override` | `BSH_CDP_HOST_OVERRIDE` | Rewrite the host part of the returned CDP endpoint |
+| `--metadata-json` | `BSH_METADATA_JSON` | JSON object merged into session metadata |
+| `--metadata KEY=VALUE` | none | Extra session metadata entries |
+| `--mcp-command` | `BSH_MCP_COMMAND` | Command used to launch Playwright MCP |
+| `--mcp-package` | `BSH_MCP_PACKAGE` | Package argument passed to the launcher, defaults to `@playwright/mcp@latest` |
+| `--mcp-arg ARG` | `BSH_MCP_ARGS` | Extra args forwarded to Playwright MCP |
+
 ### Preview
 
 The dashboard embeds the returned `preview_url` in an iframe. You can also open it directly in a new tab.
@@ -356,20 +486,66 @@ The dashboard embeds the returned `preview_url` in an iframe. You can also open 
 - The current implementation returns direct noVNC URLs instead of reverse-proxying them through the API service.
 - Persistent profiles are exclusive per owner. A second concurrent session cannot reuse the same persistent profile directory.
 
+## Common Integration Issues We Hit
+
+These are not hypothetical. They came up in a real CoPaw deployment and are worth designing for up front.
+
+### 1. Dynamic CDP ports were mistaken for fixed ports
+
+Browser Session Hub allocates a free CDP port per session. One session may get `9333`, the next may get `9334`, `9335`, and so on.
+
+Implication:
+
+- never hardcode `--cdp-endpoint http://host:9333`
+- always read the current `cdp_http_endpoint` from `POST /api/sessions`
+
+### 2. The returned public CDP host was not actually reachable locally
+
+In one Linux deployment the API returned `http://192.168.3.166:9335`, but Chromium only exposed DevTools on `127.0.0.1:9335`. The preview worked, yet Playwright MCP failed with:
+
+```text
+Error: connect ECONNREFUSED 192.168.3.166:9333
+```
+
+Implication:
+
+- `BROWSER_SESSION_HUB_PUBLIC_HOST` controls what the API returns
+- it does not guarantee that Chromium is truly reachable on that interface
+- for a local orchestrator, use `--cdp-host-override 127.0.0.1`
+
+### 3. CoPaw hot reload conflicted with persistent profiles
+
+CoPaw may briefly start a new MCP client before fully shutting down the previous one during hot reload. With `persist_profile=true` and a fixed `owner_id`, Browser Session Hub correctly rejects the second session because the profile is already in use.
+
+Implication:
+
+- for zero-downtime MCP reloads, `persist_profile=false` is usually safer
+- if you must keep persistent profiles, the orchestrator needs stricter sequencing
+
+### 4. Tool names can look different from the MCP client key
+
+In CoPaw, the user-visible browser tools may be named `browser_navigate`, `browser_snapshot`, and similar names even when they are served by the `playwright` MCP client underneath.
+
+Implication:
+
+- do not assume the model will see `mcp__playwright__*` literally
+- verify the actual tool wiring in your platform
+- in CoPaw, keep the MCP client key as `playwright`
+
 ## Current Integration Status
 
-The current implementation is already sufficient for a basic CoPaw integration where:
+The current implementation is sufficient for a practical CoPaw integration where:
 
 - CoPaw creates a session through `POST /api/sessions`
-- CoPaw reads the returned `cdp_http_endpoint`
-- Playwright MCP is started with that `cdp_http_endpoint`
+- CoPaw registers a `playwright` MCP client backed by `browser-hub-playwright-wrapper`
+- the wrapper creates the session, resolves the correct local CDP endpoint, and starts Playwright MCP
 - a frontend page embeds the returned `preview_url` to show the live browser desktop through noVNC
 
 In other words, the core flow "agent drives Chrome through CDP while a human watches the live page" is already supported by this service.
 
 Current limitations to keep in mind:
 
-- this has only been unit-tested in the current workspace, not end-to-end on a Linux host with real `Chrome/Chromium + Xvfb + x11vnc + novnc_proxy`
+- the wrapper path solves the dynamic-endpoint problem, but it still assumes the agent platform can launch a `stdio` child process
 - `preview_url` currently points directly to the per-session noVNC port instead of going through the main service
 - there is no access-token or reverse-proxy layer on preview traffic yet
 - idle-session renewal currently depends on explicit `/touch` calls rather than a stronger lease model

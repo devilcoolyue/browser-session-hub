@@ -49,6 +49,52 @@ Browser Session Hub 是一个自托管的浏览器会话编排服务，适合需
 - 自带最小 dashboard，可创建、选择、停止会话
 - API 优先设计，方便外部编排器接入
 
+## 和 CoPaw、Playwright MCP、其他智能体平台的关系
+
+这几个组件解决的是不同层的问题，不要混为一谈：
+
+- Browser Session Hub 负责创建和管理隔离浏览器会话。
+- Playwright MCP 负责通过 CDP 去控制一个已经存在的浏览器。
+- CoPaw 或其他智能体平台负责决定什么时候创建会话、续租、销毁，以及哪个用户或哪个 agent 拥有这次浏览器会话。
+
+典型链路如下：
+
+```text
+智能体平台（CoPaw、自研 orchestrator 等）
+    -> POST /api/sessions
+    -> 拿到 session_id + cdp_http_endpoint + preview_url
+    -> 用这个 cdp_http_endpoint 启动 Playwright MCP
+    -> 把 preview_url 展示给人
+    -> 活跃期间 POST /api/sessions/{id}/touch
+    -> 结束时 DELETE /api/sessions/{id}
+```
+
+这个项目本身不是浏览器控制型 MCP server，它是 Playwright MCP 下面的“浏览器会话层”。
+
+如果你的编排器支持运行时动态更新 MCP 配置，那么它可以直接先调用 `POST /api/sessions`，再把返回的 `cdp_http_endpoint` 填给 Playwright MCP。
+
+如果你的平台只能配置一个静态的 `stdio` MCP 命令，而且你又不想改平台源码，那么就用仓库内置的 `browser-hub-playwright-wrapper`。它会先创建 session，再用正确的动态 endpoint 拉起 `@playwright/mcp`。
+
+## 隔离模型
+
+真正的隔离边界是 Browser Session Hub 的请求参数，不是 Playwright MCP 自己。
+
+- `session_id` 是一次具体运行出来的浏览器会话 ID。
+- `owner_id` 是由外部编排器决定的逻辑隔离键。
+- `persist_profile=false` 表示使用会话目录下的临时 profile。
+- `persist_profile=true` 表示同一个 `owner_id` 复用 profile，但这个 profile 在会话运行期间是独占的。
+
+推荐的 `owner_id` 设计：
+
+- 每个 agent 一套浏览器：`agent:{agent_id}`
+- 同一套 agent 系统里每个最终用户一套浏览器：`user:{user_id}:agent:{agent_id}`
+- 每个用户会话一套浏览器：`user:{user_id}:agent:{agent_id}:chat:{chat_id}`
+
+一个重要限制：
+
+- 静态 MCP 配置无法在运行时自动为不同终端用户生成不同的 `owner_id`
+- 如果你要在“同一个 agent 下按最终用户隔离”，而平台又不能动态改 MCP 参数，就需要一个很薄的编排层，或者单独做一个 MCP server 来暴露 `create_session` / `touch_session` / `stop_session`
+
 ## Linux 部署依赖
 
 部署到 Linux 时，需要同时满足 Python 运行依赖和宿主机图形链路依赖。
@@ -210,6 +256,13 @@ pid 文件: ~/.browser-session-hub/run/browser-session-hub.pid
 - `BROWSER_SESSION_HUB_X11VNC_PATH`
 - `BROWSER_SESSION_HUB_NOVNC_PROXY_PATH`
 
+这些配置在真实接入里还要注意：
+
+- `BROWSER_SESSION_HUB_PUBLIC_HOST` 决定 API 返回的 `cdp_http_endpoint` 和 `preview_url` 里写什么主机名。
+- `BROWSER_SESSION_HUB_CDP_BIND_HOST` 决定 Browser Session Hub 会让 Chrome 监听哪个网卡地址。
+- 这两个配置有关联，但不是同一件事。
+- 在真实部署里，有些 Chromium 即使带了 `--remote-debugging-address=0.0.0.0`，最终 DevTools 仍然只监听在 loopback。遇到这种情况，本机编排器应该使用 wrapper 的 `--cdp-host-override 127.0.0.1`。
+
 ## Daemon 启动示例
 
 带公网地址和 root 场景 `--no-sandbox` 的后台启动示例：
@@ -316,24 +369,173 @@ curl -s http://127.0.0.1:8091/api/sessions \
 }
 ```
 
+### 通用接入流程
+
+正确的接入顺序应该是：
+
+1. 先调用 `POST /api/sessions` 创建会话。
+2. 从返回里读取 `session.cdp_http_endpoint`。
+3. 用这个值启动 Playwright MCP 的 `--cdp-endpoint`。
+4. 把 `session.preview_url` 提供给人查看或接管。
+5. 如果启用了 `BROWSER_SESSION_HUB_IDLE_TIMEOUT`，持续调用 `POST /api/sessions/{session_id}/touch` 保活。
+6. 用完后调用 `DELETE /api/sessions/{session_id}` 停掉会话。
+
+不要把 `9333`、`9334` 这种端口写死。CDP 端口是按会话动态分配的。
+
+### 只支持静态 MCP 配置时，用 wrapper
+
+如果智能体平台只能接受一个静态 `stdio` MCP 配置，不适合直接注册 `npx @playwright/mcp`，而应该注册 wrapper。
+
+wrapper 会做这些事情：
+
+- 先调用 `POST /api/sessions`
+- 必要时把返回的 CDP host 改写成本机可用地址
+- 用正确的 `--cdp-endpoint` 启动 `@playwright/mcp`
+- 按需定时 `/touch`
+- 退出时自动删除 session
+
+它不是一个常驻系统服务，而是由智能体平台在 MCP client 建立连接时按需拉起的子进程。
+
+如果编排器和 Browser Session Hub 在同一台机器上，而 Chromium 的 DevTools 只监听 loopback，那么请这样配置：
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/data/app/browser-session-hub/.venv/bin/browser-hub-playwright-wrapper",
+      "args": [
+        "--base-url",
+        "http://127.0.0.1:8091",
+        "--owner-id",
+        "agent:default",
+        "--touch-interval",
+        "20",
+        "--start-url",
+        "about:blank",
+        "--cdp-host-override",
+        "127.0.0.1",
+        "--mcp-arg=--browser",
+        "--mcp-arg=chromium"
+      ]
+    }
+  }
+}
+```
+
+对于 CoPaw，建议 MCP client key 保持为 `playwright`。在真实部署里，模型最终看到的工具名可能是 `browser_navigate`、`browser_snapshot`、`browser_click`，但底层仍然可能是 `playwright` 这个 MCP client 在提供服务。用 `playwright` 这个 key，CoPaw 才能更稳定地对齐它自己的 browser skill 和工具池。
+
+如果服务环境里的 `npx` 不在 `PATH` 中，可以通过 `--mcp-command` 传绝对路径，例如：
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/data/app/browser-session-hub/.venv/bin/browser-hub-playwright-wrapper",
+      "args": [
+        "--base-url",
+        "http://127.0.0.1:8091",
+        "--owner-id",
+        "agent:default",
+        "--touch-interval",
+        "20",
+        "--start-url",
+        "about:blank",
+        "--cdp-host-override",
+        "127.0.0.1",
+        "--mcp-command",
+        "/root/.nvm/versions/node/v22.22.2/bin/npx",
+        "--mcp-arg=--browser",
+        "--mcp-arg=chromium"
+      ]
+    }
+  }
+}
+```
+
+### Wrapper 参数和环境变量对照
+
+wrapper 同时支持 CLI 参数和环境变量：
+
+| CLI 参数 | 环境变量 | 作用 |
+| --- | --- | --- |
+| `--base-url` | `BSH_BASE_URL` | Browser Session Hub 服务地址 |
+| `--owner-id` | `BSH_OWNER_ID` | 逻辑隔离键 |
+| `--start-url` | `BSH_START_URL` | 浏览器初始页面 |
+| `--viewport-width` | `BSH_VIEWPORT_WIDTH` | 初始浏览器宽度 |
+| `--viewport-height` | `BSH_VIEWPORT_HEIGHT` | 初始浏览器高度 |
+| `--persist-profile` / `--no-persist-profile` | `BSH_PERSIST_PROFILE` | 是否复用同一个 owner 的 profile |
+| `--touch-interval` | `BSH_TOUCH_INTERVAL` | 保活间隔秒数；`0` 表示不 touch |
+| `--cdp-host-override` | `BSH_CDP_HOST_OVERRIDE` | 改写返回的 CDP endpoint 的 host |
+| `--metadata-json` | `BSH_METADATA_JSON` | 合并到 session metadata 的 JSON 对象 |
+| `--metadata KEY=VALUE` | 无 | 额外 metadata 项 |
+| `--mcp-command` | `BSH_MCP_COMMAND` | 用来启动 Playwright MCP 的命令 |
+| `--mcp-package` | `BSH_MCP_PACKAGE` | 传给 launcher 的包名，默认 `@playwright/mcp@latest` |
+| `--mcp-arg ARG` | `BSH_MCP_ARGS` | 透传给 Playwright MCP 的额外参数 |
+
 ### 预览页面
 
 dashboard 会直接把返回的 `preview_url` 嵌入 iframe。你也可以手动在浏览器中打开它。
 
+## 真实部署中遇到的常见问题
+
+下面这些不是理论问题，而是在真实 CoPaw 部署里实际遇到过的。
+
+### 1. 把动态 CDP 端口误当成固定端口
+
+Browser Session Hub 每次创建会话都会动态分配一个空闲 CDP 端口。某次可能是 `9333`，下一次可能就是 `9334`、`9335`。
+
+含义是：
+
+- 不要把 `--cdp-endpoint http://host:9333` 写死
+- 必须以 `POST /api/sessions` 返回的 `cdp_http_endpoint` 为准
+
+### 2. API 返回的公网地址，不等于本机一定能连到的 DevTools 地址
+
+在一个真实 Linux 部署里，API 返回的是 `http://192.168.3.166:9335`，但 Chromium 实际只在 `127.0.0.1:9335` 暴露 DevTools。预览正常，但 Playwright MCP 报错：
+
+```text
+Error: connect ECONNREFUSED 192.168.3.166:9333
+```
+
+这里的含义是：
+
+- `BROWSER_SESSION_HUB_PUBLIC_HOST` 决定 API 返回什么地址
+- 它不保证 Chromium 真的在那个网卡地址上可达
+- 如果编排器和 Browser Session Hub 在同一台机器，本机接入请优先用 `--cdp-host-override 127.0.0.1`
+
+### 3. CoPaw 的热重载和持久 profile 会打架
+
+CoPaw 做 hot reload 时，可能会在旧 MCP client 完全退出之前，先拉起新的 MCP client。此时如果 `persist_profile=true` 且 `owner_id` 固定，Browser Session Hub 会正确拒绝第二个会话，因为同一个持久 profile 已经被占用。
+
+这里的含义是：
+
+- 对零停机 MCP reload 来说，`persist_profile=false` 通常更稳妥
+- 如果必须保留持久 profile，就需要让编排器做更严格的停旧启新顺序控制
+
+### 4. 工具名不一定和 MCP client key 一样
+
+在 CoPaw 里，模型看到的工具名可能是 `browser_navigate`、`browser_snapshot` 等，即使底层真正提供能力的是 `playwright` 这个 MCP client。
+
+这里的含义是：
+
+- 不要只凭工具名猜底层接的是哪套服务
+- 要看平台内部的工具池映射
+- 在 CoPaw 里，MCP client key 建议保持为 `playwright`
+
 ## 当前集成状态
 
-当前实现已经足以支撑一个最小 CoPaw 集成流程：
+当前实现已经足以支撑一个实用的 CoPaw 集成流程：
 
 - CoPaw 调用 `POST /api/sessions` 创建会话
-- CoPaw 读取返回的 `cdp_http_endpoint`
-- Playwright MCP 使用该 `cdp_http_endpoint` 建立 CDP 连接
+- CoPaw 注册一个由 `browser-hub-playwright-wrapper` 驱动的 `playwright` MCP client
+- wrapper 负责创建 session、解析本机可用的 CDP endpoint，并拉起 Playwright MCP
 - 前端把返回的 `preview_url` 嵌入页面，用 noVNC 展示实时浏览器画面
 
 也就是说，当前版本已经支持“agent 通过 CDP 操作浏览器，同时前端实时看到操作画面”这条主链路。
 
 当前限制如下：
 
-- 当前工作区只验证过单元测试，还没有在真实 Linux 机器上完成端到端验证
+- wrapper 方案解决了动态 endpoint 问题，但仍然要求智能体平台支持启动一个 `stdio` 子进程型 MCP client
 - `preview_url` 目前仍然是直接暴露每会话 noVNC 端口，而不是通过主服务反向代理
 - 预览访问还没有 token 或统一鉴权控制
 - 当前空闲续租主要依赖显式 `/touch`，还不是更稳健的 lease 模型
