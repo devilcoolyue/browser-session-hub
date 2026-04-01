@@ -129,6 +129,7 @@ bash scripts/check_linux_dependencies.sh
 - `chromium`、`x11vnc`、`novnc`、`openbox` 一般来自 EPEL 9。
 - `novnc` 包会提供这个服务需要的 `novnc_proxy` 可执行文件。
 - 如果你更想用 Google Chrome 而不是 Chromium，建议按 Google 官方 Linux 安装说明单独安装。
+- 如果宿主机上的工具链偏老，`pip install -e .` 仍然失败，可以先执行 `python3.11 -m pip install --upgrade pip setuptools wheel`。
 
 Playwright 关于 Linux 有头模式和 MCP 的参考文档：
 
@@ -143,6 +144,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 ```
+
+如果目标机器里的 `pip` 或 `setuptools` 比较老，仓库里现在也带了一个最小 `setup.py`，用来兼容旧版 editable install。
 
 ## 运行
 

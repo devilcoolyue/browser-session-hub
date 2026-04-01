@@ -131,6 +131,7 @@ Notes:
 - `chromium`, `x11vnc`, `novnc`, and `openbox` are typically provided through EPEL 9.
 - the `novnc` package provides the `novnc_proxy` binary expected by this service.
 - if you prefer Google Chrome over Chromium, install Chrome separately using Google's official Linux instructions.
+- if `pip install -e .` still fails on an older host toolchain, run `python3.11 -m pip install --upgrade pip setuptools wheel` first.
 
 Playwright references for headed Linux and MCP configuration:
 
@@ -145,6 +146,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 ```
+
+If the target host has an older `pip` or `setuptools`, the repository also includes a minimal `setup.py` so legacy editable installs still work.
 
 ## Run
 
