@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 browser-session-hub = "browser_session_hub.cli:main"
+browser-hub-playwright-wrapper = "browser_session_hub.browser_hub_playwright_wrapper:main"
 
 [build-system]
 requires = ["setuptools>=68"]
