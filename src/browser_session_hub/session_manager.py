@@ -258,10 +258,7 @@ class BrowserSessionManager:
                 f"http://{self._config.public_host}:{ports.cdp_port}"
             )
             preview_url = (
-                f"{self._config.public_scheme}://{self._config.public_host}:"
-                f"{ports.novnc_port}/vnc.html?autoconnect=1&resize=scale&reconnect=1"
-                f"&quality={self._config.vnc_quality}"
-                f"&compression={self._config.vnc_compress}"
+                f"{self._config.dashboard_url}/preview/{session_id}"
             )
             session = ManagedSession(
                 session_id=session_id,

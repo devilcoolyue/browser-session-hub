@@ -159,6 +159,7 @@ async function createSession(event) {
       ? Number(byId("viewportHeight").value)
       : null,
     persist_profile: byId("persistProfile").checked,
+    kiosk: byId("kioskMode").checked,
   };
 
   const data = await requestJson("/api/sessions", {

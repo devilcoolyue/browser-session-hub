@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from html import escape
 import logging
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -26,6 +28,25 @@ from .models import (
 from .session_manager import BrowserSessionManager, SessionManagerError
 
 logger = logging.getLogger(__name__)
+
+
+def _build_raw_preview_url(
+    config: BrowserSessionHubConfig,
+    session: SessionSummary,
+) -> str:
+    query = urlencode(
+        {
+            "autoconnect": 1,
+            "resize": "scale",
+            "reconnect": 1,
+            "quality": config.vnc_quality,
+            "compression": config.vnc_compress,
+        }
+    )
+    return (
+        f"{config.public_scheme}://{config.public_host}:{session.novnc_port}"
+        f"/vnc.html?{query}"
+    )
 
 
 def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
@@ -150,6 +171,68 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
             raise _http_error(exc) from exc
 
     static_dir = Path(__file__).parent / "static"
+
+    @app.get("/preview/{session_id}", include_in_schema=False)
+    async def preview(session_id: str) -> HTMLResponse:
+        try:
+            session = await run_in_threadpool(manager.get_session, session_id)
+        except SessionManagerError as exc:
+            raise _http_error(exc) from exc
+
+        raw_preview_url = _build_raw_preview_url(cfg, session)
+        title = escape(f"Preview {session.session_id}")
+        iframe_src = escape(raw_preview_url, quote=True)
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title}</title>
+    <style>
+      :root {{
+        --toolbar-crop: 42px;
+        color-scheme: light;
+      }}
+
+      * {{
+        box-sizing: border-box;
+      }}
+
+      html,
+      body {{
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0b1220;
+      }}
+
+      .preview-shell {{
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: #0b1220;
+      }}
+
+      iframe {{
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: calc(100% + var(--toolbar-crop));
+        height: 100%;
+        border: 0;
+        transform: translateX(calc(-1 * var(--toolbar-crop)));
+        background: #0b1220;
+      }}
+    </style>
+  </head>
+  <body>
+    <div class="preview-shell">
+      <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
+    </div>
+  </body>
+</html>
+"""
+        return HTMLResponse(html)
 
     @app.get("/", include_in_schema=False)
     async def root() -> FileResponse:

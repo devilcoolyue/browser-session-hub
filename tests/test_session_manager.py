@@ -77,9 +77,7 @@ def test_create_session_assigns_unique_runtime(monkeypatch, tmp_path: Path):
     assert summary.status == SessionStatus.running
     assert summary.start_url == "https://example.com"
     assert summary.cdp_http_endpoint.startswith("http://127.0.0.1:95")
-    assert summary.preview_url.startswith("http://127.0.0.1:66")
-    assert "show_dot=" not in summary.preview_url
-    assert "resize=scale" in summary.preview_url
+    assert summary.preview_url == f"http://127.0.0.1:8091/preview/{summary.session_id}"
     assert summary.profile_dir.endswith(f"{summary.session_id}/profile")
 
     manager.stop_session(summary.session_id)

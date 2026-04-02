@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from browser_session_hub.app import create_app
 from browser_session_hub.config import BrowserSessionHubConfig
+from browser_session_hub.models import SessionStatus, SessionSummary
 
 
 def make_config(tmp_path: Path) -> BrowserSessionHubConfig:
@@ -54,3 +55,42 @@ def test_app_health_and_static_index(tmp_path: Path):
     assert health.json()["service"] == "browser-session-hub"
     assert root.status_code == 200
     assert "Browser Session Hub" in root.text
+
+
+def test_preview_page_wraps_raw_novnc_url(tmp_path: Path, monkeypatch):
+    app = create_app(make_config(tmp_path))
+    client = TestClient(app)
+
+    monkeypatch.setattr(
+        app.state.manager,
+        "get_session",
+        lambda session_id: SessionSummary(
+            session_id=session_id,
+            owner_id="alice",
+            status=SessionStatus.running,
+            created_at=0,
+            last_activity=0,
+            start_url="https://example.com",
+            persist_profile=False,
+            working_dir="/tmp/session",
+            profile_dir="/tmp/session/profile",
+            cdp_http_endpoint="http://127.0.0.1:9333",
+            cdp_ws_endpoint="ws://127.0.0.1:9333/devtools/browser/mock",
+            preview_url=f"http://127.0.0.1:8091/preview/{session_id}",
+            display_number=101,
+            cdp_port=9333,
+            vnc_port=5901,
+            novnc_port=6081,
+            viewport_width=1440,
+            viewport_height=900,
+            processes={},
+            metadata={},
+            error=None,
+        ),
+    )
+
+    response = client.get("/preview/session-123")
+
+    assert response.status_code == 200
+    assert "/vnc.html?autoconnect=1" in response.text
+    assert "toolbar-crop" in response.text

@@ -43,6 +43,11 @@
               Reuse a persistent profile for this owner
             </label>
 
+            <label class="checkbox">
+              <input id="kioskMode" name="kioskMode" type="checkbox" checked />
+              Kiosk mode for clean preview
+            </label>
+
             <button id="createButton" type="submit">Start Session</button>
           </form>
         </section>
@@ -102,7 +107,7 @@
         <section class="preview-card">
           <div class="preview-header">
             <h2>Live Preview</h2>
-            <a id="previewLink" href="#" target="_blank" rel="noreferrer">Open noVNC in new tab</a>
+            <a id="previewLink" href="#" target="_blank" rel="noreferrer">Open preview in new tab</a>
           </div>
           <div id="previewContainer" class="preview-frame">
             <iframe id="previewFrame" title="Browser Preview"></iframe>
