@@ -32,7 +32,7 @@ input {
 
 .shell {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  grid-template-columns: 360px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -227,6 +227,8 @@ button:disabled {
   gap: 18px;
   padding: 20px;
   min-height: 100vh;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .detail-card,
@@ -269,6 +271,7 @@ code {
 .preview-card {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
