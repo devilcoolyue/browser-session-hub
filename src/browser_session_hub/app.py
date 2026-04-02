@@ -204,7 +204,7 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         top: 0;
         left: 0;
         width: {vw}px;
-        height: {vh}px;
+        height: {vh + 28}px;
         border: 0;
         transform-origin: 0 0;
         background: #fff;
@@ -215,11 +215,12 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
     <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
     <script>
       (function() {{
+        var BAR = 28;
         var iframe = document.querySelector('iframe');
         function fit() {{
           var sx = window.innerWidth / {vw};
           var sy = window.innerHeight / {vh};
-          iframe.style.transform = 'scale(' + sx + ',' + sy + ')';
+          iframe.style.transform = 'scale(' + sx + ',' + sy + ') translateY(-' + BAR + 'px)';
         }}
         window.addEventListener('resize', fit);
         fit();
