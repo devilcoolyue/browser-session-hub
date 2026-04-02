@@ -45,7 +45,7 @@ def _build_raw_preview_url(
     )
     return (
         f"{config.public_scheme}://{config.public_host}:{session.novnc_port}"
-        f"/vnc.html?{query}"
+        f"/vnc_lite.html?{query}"
     )
 
 
@@ -203,7 +203,7 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         position: absolute;
         top: 0;
         left: 0;
-        width: {vw + 50}px;
+        width: {vw}px;
         height: {vh}px;
         border: 0;
         transform-origin: 0 0;
@@ -215,12 +215,11 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
     <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
     <script>
       (function() {{
-        var CROP = 50;
         var iframe = document.querySelector('iframe');
         function fit() {{
           var sx = window.innerWidth / {vw};
           var sy = window.innerHeight / {vh};
-          iframe.style.transform = 'scale(' + sx + ',' + sy + ') translateX(-' + CROP + 'px)';
+          iframe.style.transform = 'scale(' + sx + ',' + sy + ')';
         }}
         window.addEventListener('resize', fit);
         fit();
