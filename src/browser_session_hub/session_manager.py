@@ -261,7 +261,7 @@ class BrowserSessionManager:
                 f"{self._config.public_scheme}://{self._config.public_host}:"
                 f"{ports.novnc_port}/vnc.html?autoconnect=1&resize=scale&reconnect=1"
                 f"&quality={self._config.vnc_quality}"
-                f"&compression={self._config.vnc_compress}&show_dot=1"
+                f"&compression={self._config.vnc_compress}"
             )
             session = ManagedSession(
                 session_id=session_id,

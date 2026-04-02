@@ -10,6 +10,7 @@ const dependencyList = document.querySelector("#dependencyList");
 const createForm = document.querySelector("#createForm");
 const refreshButton = document.querySelector("#refreshButton");
 const stopButton = document.querySelector("#stopButton");
+const previewContainer = document.querySelector("#previewContainer");
 const previewFrame = document.querySelector("#previewFrame");
 const previewEmpty = document.querySelector("#previewEmpty");
 const previewLink = document.querySelector("#previewLink");
@@ -41,6 +42,8 @@ function clearSelectionView() {
   stopButton.disabled = true;
   previewFrame.classList.remove("visible");
   previewFrame.src = "about:blank";
+  previewFrame.style.width = "";
+  previewFrame.style.height = "";
   previewEmpty.style.display = "grid";
   previewLink.href = "#";
 }
@@ -124,6 +127,10 @@ function renderSelectedSession() {
   setText("detailWorkingDir", session.working_dir);
 
   previewLink.href = session.preview_url;
+  previewFrame.style.width = `${session.viewport_width}px`;
+  previewFrame.style.height = `${session.viewport_height}px`;
+  previewContainer.scrollTop = 0;
+  previewContainer.scrollLeft = 0;
   previewFrame.src = session.preview_url;
   previewFrame.classList.add("visible");
   previewEmpty.style.display = "none";
