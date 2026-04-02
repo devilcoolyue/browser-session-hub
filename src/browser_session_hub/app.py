@@ -204,14 +204,14 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: #0b1220;
+        background: #fff;
       }}
 
       .preview-shell {{
         position: fixed;
         inset: 0;
         overflow: hidden;
-        background: #0b1220;
+        background: #fff;
       }}
 
       iframe {{
@@ -221,7 +221,7 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         height: 100%;
         border: 0;
         transform: translateX(calc(-1 * var(--toolbar-crop)));
-        background: #0b1220;
+        background: #fff;
       }}
     </style>
   </head>
