@@ -203,10 +203,10 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         position: absolute;
         top: 0;
         left: 0;
-        width: {vw}px;
+        width: {vw + 50}px;
         height: {vh}px;
         border: 0;
-        transform-origin: top left;
+        transform-origin: 0 0;
         background: #fff;
       }}
     </style>
@@ -215,11 +215,12 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
     <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
     <script>
       (function() {{
+        var CROP = 50;
         var iframe = document.querySelector('iframe');
         function fit() {{
           var sx = window.innerWidth / {vw};
           var sy = window.innerHeight / {vh};
-          iframe.style.transform = 'scale(' + sx + ',' + sy + ')';
+          iframe.style.transform = 'scale(' + sx + ',' + sy + ') translateX(-' + CROP + 'px)';
         }}
         window.addEventListener('resize', fit);
         fit();
