@@ -386,6 +386,8 @@ class BrowserHubPlaywrightWrapper:
         self._touch_thread: threading.Thread | None = None
         self._cleanup_lock = threading.Lock()
         self._cleaned_up = False
+        self._fatal_error_lock = threading.Lock()
+        self._fatal_error: str | None = None
         self._previous_signal_handlers: dict[int, Any] = {}
         self._received_signal: int | None = None
         self._atexit_registered = False
@@ -414,6 +416,8 @@ class BrowserHubPlaywrightWrapper:
             self._config,
             resolved_cdp_http_endpoint,
         )
+        if self._fatal_error is not None:
+            raise WrapperError(self._fatal_error)
         logger.info("Launching Playwright MCP command: %s", shlex.join(command))
         try:
             self._child_process = subprocess.Popen(command)
@@ -426,6 +430,8 @@ class BrowserHubPlaywrightWrapper:
             exit_code = self._wait_for_child()
             if self._received_signal is not None:
                 return 128 + self._received_signal
+            if self._fatal_error is not None:
+                return 1
             return exit_code
         finally:
             self.cleanup()
@@ -489,11 +495,11 @@ class BrowserHubPlaywrightWrapper:
             try:
                 self._touch_session()
             except WrapperError as exc:
-                logger.warning(
-                    "Failed to touch Browser Session Hub session %s: %s",
-                    self._session_id,
-                    exc,
+                self._request_exit(
+                    f"Browser Session Hub session {self._session_id} became unavailable: "
+                    f"{exc}"
                 )
+                return
 
     def _install_signal_handlers(self) -> None:
         for signum in (signal.SIGINT, signal.SIGTERM):
@@ -519,6 +525,15 @@ class BrowserHubPlaywrightWrapper:
                 return self._child_process.wait()
             except InterruptedError:
                 continue
+
+    def _request_exit(self, reason: str) -> None:
+        with self._fatal_error_lock:
+            if self._fatal_error is not None:
+                return
+            self._fatal_error = reason
+        logger.error("%s", reason)
+        self._stop_event.set()
+        _terminate_process(self._child_process)
 
     def cleanup(self) -> None:
         """Stop background activity and delete the active session."""

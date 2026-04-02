@@ -223,6 +223,15 @@ class BrowserSessionManager:
     def create_session(self, request: CreateSessionRequest) -> SessionSummary:
         """Create and start a new isolated session."""
         with self._lock:
+            existing_session = self._find_session_by_owner_locked(request.owner_id)
+            if existing_session is not None:
+                existing_session.last_activity = time.time()
+                logger.info(
+                    "Reusing session %s for owner %s",
+                    existing_session.session_id,
+                    request.owner_id,
+                )
+                return existing_session.to_summary()
             self._assert_dependencies_ready()
             session_id = uuid4().hex[:12]
             now = time.time()
@@ -315,6 +324,12 @@ class BrowserSessionManager:
         if session is None:
             raise SessionManagerError(f"Unknown session: {session_id}")
         return session
+
+    def _find_session_by_owner_locked(self, owner_id: str) -> ManagedSession | None:
+        for session in self._sessions.values():
+            if session.owner_id == owner_id:
+                return session
+        return None
 
     def _allocate_ports_locked(self) -> SessionPorts:
         display_number = self._allocate_display_locked()

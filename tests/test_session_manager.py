@@ -1,10 +1,8 @@
 from pathlib import Path
 
-import pytest
-
 from browser_session_hub.config import BrowserSessionHubConfig
 from browser_session_hub.models import CreateSessionRequest, SessionStatus
-from browser_session_hub.session_manager import BrowserSessionManager, SessionManagerError
+from browser_session_hub.session_manager import BrowserSessionManager
 
 
 def make_config(tmp_path: Path) -> BrowserSessionHubConfig:
@@ -86,23 +84,45 @@ def test_create_session_assigns_unique_runtime(monkeypatch, tmp_path: Path):
     assert manager.list_sessions() == []
 
 
-def test_persistent_profile_blocks_concurrent_reuse(monkeypatch, tmp_path: Path):
+def test_create_session_reuses_existing_owner_session(monkeypatch, tmp_path: Path):
     manager = BrowserSessionManager(make_config(tmp_path))
     monkeypatch.setattr("browser_session_hub.session_manager.is_port_available", lambda *_: True)
     monkeypatch.setattr("browser_session_hub.session_manager.is_display_available", lambda *_: True)
     monkeypatch.setattr(manager, "_assert_dependencies_ready", lambda: None)
-    monkeypatch.setattr(manager, "_start_session_locked", fake_start_factory(manager._config))
     monkeypatch.setattr(manager, "_stop_session_locked", fake_stop(manager))
 
+    start_calls: list[str] = []
+
+    def fake_start(session):
+        start_calls.append(session.session_id)
+        fake_start_factory(manager._config)(session)
+
+    monkeypatch.setattr(manager, "_start_session_locked", fake_start)
+
     first = manager.create_session(
-        CreateSessionRequest(owner_id="bob", persist_profile=True)
+        CreateSessionRequest(
+            owner_id="bob",
+            persist_profile=True,
+            start_url="https://first.example.com",
+        )
+    )
+    manager._sessions[first.session_id].last_activity -= 10
+    previous_last_activity = manager._sessions[first.session_id].last_activity
+
+    second = manager.create_session(
+        CreateSessionRequest(
+            owner_id="bob",
+            persist_profile=False,
+            start_url="https://second.example.com",
+        )
     )
 
-    with pytest.raises(SessionManagerError):
-        manager.create_session(
-            CreateSessionRequest(owner_id="bob", persist_profile=True)
-        )
-
+    assert second.session_id == first.session_id
+    assert second.start_url == "https://first.example.com"
+    assert second.persist_profile is True
+    assert second.last_activity > previous_last_activity
+    assert start_calls == [first.session_id]
+    assert len(manager.list_sessions()) == 1
     manager.stop_session(first.session_id)
 
 

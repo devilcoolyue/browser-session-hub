@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import threading
 import urllib.error
 
 from browser_session_hub.browser_hub_playwright_wrapper import (
@@ -282,4 +284,123 @@ def test_wrapper_run_falls_back_to_loopback_for_cdp(monkeypatch):
             "--browser",
             "chromium",
         ]
+    ]
+
+
+def test_wrapper_run_exits_when_touch_fails(monkeypatch):
+    requests: list[tuple[str, str, object | None]] = []
+    processes: list[FakeBlockingProcess] = []
+
+    class FakeBlockingProcess:
+        def __init__(self):
+            self.returncode: int | None = None
+            self.terminate_calls = 0
+            self.kill_calls = 0
+            self._done = threading.Event()
+
+        def wait(self, timeout: float | None = None) -> int:
+            if self.returncode is None:
+                finished = self._done.wait(timeout)
+                if not finished:
+                    raise subprocess.TimeoutExpired("fake-playwright", timeout)
+            assert self.returncode is not None
+            return self.returncode
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+        def terminate(self) -> None:
+            self.terminate_calls += 1
+            self.returncode = -15
+            self._done.set()
+
+        def kill(self) -> None:
+            self.kill_calls += 1
+            self.returncode = -9
+            self._done.set()
+
+    def fake_urlopen(request, timeout=10.0):
+        payload = (
+            json.loads(request.data.decode("utf-8"))
+            if getattr(request, "data", None) is not None
+            else None
+        )
+        requests.append((request.get_method(), request.full_url, payload))
+        if request.get_method() == "POST" and request.full_url.endswith("/api/sessions"):
+            return FakeJsonResponse(
+                {
+                    "session": {
+                        "session_id": "session-123",
+                        "cdp_http_endpoint": "http://127.0.0.1:9334",
+                        "preview_url": "http://127.0.0.1:6081/vnc.html",
+                    }
+                }
+            )
+        if request.full_url == "http://127.0.0.1:9334/json/version":
+            return FakeJsonResponse(
+                {
+                    "webSocketDebuggerUrl": (
+                        "ws://127.0.0.1:9334/devtools/browser/session-123"
+                    )
+                }
+            )
+        if request.get_method() == "POST" and request.full_url.endswith("/touch"):
+            raise urllib.error.URLError("connection refused")
+        if request.get_method() == "DELETE":
+            raise urllib.error.URLError("connection refused")
+        return FakeJsonResponse({"ok": True})
+
+    def fake_popen(command, **kwargs):
+        assert kwargs == {}
+        process = FakeBlockingProcess()
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(
+        "browser_session_hub.browser_hub_playwright_wrapper.urllib.request.urlopen",
+        fake_urlopen,
+    )
+    monkeypatch.setattr(
+        "browser_session_hub.browser_hub_playwright_wrapper.subprocess.Popen",
+        fake_popen,
+    )
+
+    config = make_config()
+    config.touch_interval_seconds = 0.01
+    wrapper = BrowserHubPlaywrightWrapper(config)
+
+    exit_code = wrapper.run()
+
+    assert exit_code == 1
+    assert len(processes) == 1
+    assert processes[0].terminate_calls == 1
+    assert processes[0].kill_calls == 0
+    assert requests == [
+        (
+            "POST",
+            "http://127.0.0.1:8091/api/sessions",
+            {
+                "owner_id": "agent:test",
+                "start_url": "https://example.com",
+                "viewport_width": 1280,
+                "viewport_height": 900,
+                "persist_profile": True,
+                "metadata": {"agent_id": "test"},
+            },
+        ),
+        (
+            "GET",
+            "http://127.0.0.1:9334/json/version",
+            None,
+        ),
+        (
+            "POST",
+            "http://127.0.0.1:8091/api/sessions/session-123/touch",
+            None,
+        ),
+        (
+            "DELETE",
+            "http://127.0.0.1:8091/api/sessions/session-123",
+            None,
+        ),
     ]
