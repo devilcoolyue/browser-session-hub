@@ -291,6 +291,9 @@ code {
 }
 
 #previewFrame {
+  position: absolute;
+  top: 0;
+  left: 0;
   border: 0;
   display: none;
   transform-origin: top left;
