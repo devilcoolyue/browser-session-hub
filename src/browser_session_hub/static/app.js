@@ -2,6 +2,7 @@ const state = {
   sessions: [],
   selectedSessionId: null,
   touchTimer: null,
+  resizeObserver: null,
 };
 
 const sessionList = document.querySelector("#sessionList");
@@ -34,6 +35,26 @@ function setText(id, value) {
   byId(id).textContent = value || "";
 }
 
+function scalePreview() {
+  const session = state.sessions.find(
+    (item) => item.session_id === state.selectedSessionId,
+  );
+  if (!session || !previewFrame.classList.contains("visible")) {
+    return;
+  }
+  const containerW = previewContainer.clientWidth;
+  const containerH = previewContainer.clientHeight;
+  const nativeW = session.viewport_width;
+  const nativeH = session.viewport_height;
+  if (!containerW || !containerH || !nativeW || !nativeH) {
+    return;
+  }
+  const scale = Math.min(containerW / nativeW, containerH / nativeH, 1);
+  previewFrame.style.width = `${nativeW}px`;
+  previewFrame.style.height = `${nativeH}px`;
+  previewFrame.style.transform = `scale(${scale})`;
+}
+
 function clearSelectionView() {
   byId("detailTitle").textContent = "No Session Selected";
   byId("detailSubtitle").textContent =
@@ -44,6 +65,7 @@ function clearSelectionView() {
   previewFrame.src = "about:blank";
   previewFrame.style.width = "";
   previewFrame.style.height = "";
+  previewFrame.style.transform = "";
   previewEmpty.style.display = "grid";
   previewLink.href = "#";
 }
@@ -127,13 +149,10 @@ function renderSelectedSession() {
   setText("detailWorkingDir", session.working_dir);
 
   previewLink.href = session.preview_url;
-  previewFrame.style.width = `${session.viewport_width}px`;
-  previewFrame.style.height = `${session.viewport_height}px`;
-  previewContainer.scrollTop = 0;
-  previewContainer.scrollLeft = 0;
   previewFrame.src = session.preview_url;
   previewFrame.classList.add("visible");
   previewEmpty.style.display = "none";
+  scalePreview();
 }
 
 async function loadDependencies() {
@@ -212,6 +231,8 @@ function scheduleTouch() {
 async function bootstrap() {
   await Promise.all([loadDependencies(), loadSessions()]);
   scheduleTouch();
+  state.resizeObserver = new ResizeObserver(() => scalePreview());
+  state.resizeObserver.observe(previewContainer);
 }
 
 createForm.addEventListener("submit", async (event) => {
