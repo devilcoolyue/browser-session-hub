@@ -182,6 +182,8 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
         raw_preview_url = _build_raw_preview_url(cfg, session)
         title = escape(f"Preview {session.session_id}")
         iframe_src = escape(raw_preview_url, quote=True)
+        vw = session.viewport_width
+        vh = session.viewport_height
         html = f"""<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -189,46 +191,40 @@ def create_app(config: BrowserSessionHubConfig | None = None) -> FastAPI:
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title}</title>
     <style>
-      :root {{
-        --toolbar-crop: 42px;
-        color-scheme: light;
-      }}
-
-      * {{
-        box-sizing: border-box;
-      }}
-
-      html,
-      body {{
+      * {{ box-sizing: border-box; }}
+      html, body {{
         margin: 0;
         width: 100%;
         height: 100%;
         overflow: hidden;
         background: #fff;
       }}
-
-      .preview-shell {{
-        position: fixed;
-        inset: 0;
-        overflow: hidden;
-        background: #fff;
-      }}
-
       iframe {{
         position: absolute;
-        inset: 0 auto 0 0;
-        width: calc(100% + var(--toolbar-crop));
-        height: 100%;
+        top: 0;
+        left: 0;
+        width: {vw}px;
+        height: {vh}px;
         border: 0;
-        transform: translateX(calc(-1 * var(--toolbar-crop)));
+        transform-origin: top left;
         background: #fff;
       }}
     </style>
   </head>
   <body>
-    <div class="preview-shell">
-      <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
-    </div>
+    <iframe src="{iframe_src}" title="{title}" allowfullscreen></iframe>
+    <script>
+      (function() {{
+        var iframe = document.querySelector('iframe');
+        function fit() {{
+          var sx = window.innerWidth / {vw};
+          var sy = window.innerHeight / {vh};
+          iframe.style.transform = 'scale(' + sx + ',' + sy + ')';
+        }}
+        window.addEventListener('resize', fit);
+        fit();
+      }})();
+    </script>
   </body>
 </html>
 """
