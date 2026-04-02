@@ -95,6 +95,7 @@ class BrowserSessionHubConfig:
     viewport_height: int
     idle_timeout_seconds: int
     no_sandbox: bool
+    kiosk: bool
     browser_extra_args: list[str]
     default_start_url: str
     vnc_quality: int
@@ -211,6 +212,10 @@ class BrowserSessionHubConfig:
             ),
             no_sandbox=_parse_bool(
                 os.environ.get("BROWSER_SESSION_HUB_NO_SANDBOX"),
+                default=False,
+            ),
+            kiosk=_parse_bool(
+                os.environ.get("BROWSER_SESSION_HUB_KIOSK"),
                 default=False,
             ),
             browser_extra_args=_parse_args(

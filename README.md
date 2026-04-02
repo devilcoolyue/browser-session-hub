@@ -249,6 +249,7 @@ Key settings:
 | `BROWSER_SESSION_HUB_VIEWPORT_HEIGHT` | `900` | Browser height |
 | `BROWSER_SESSION_HUB_IDLE_TIMEOUT` | `0` | Idle timeout in seconds, disabled when `0` |
 | `BROWSER_SESSION_HUB_NO_SANDBOX` | `false` | Add `--no-sandbox` when needed |
+| `BROWSER_SESSION_HUB_KIOSK` | `false` | Launch Chrome in kiosk mode (fullscreen, no address bar or tabs) |
 
 Binary overrides:
 
@@ -282,6 +283,28 @@ export BROWSER_SESSION_HUB_LOG_FILE=/var/log/browser-session-hub/service.log
 export BROWSER_SESSION_HUB_PID_FILE=/var/run/browser-session-hub.pid
 browser-session-hub --daemon
 ```
+
+## Kiosk Mode
+
+When `BROWSER_SESSION_HUB_KIOSK=true`, Chrome launches in kiosk mode. In this mode the browser runs fullscreen with no address bar, tab strip, or any other Chrome UI. The noVNC preview shows only the web page content.
+
+```bash
+export BROWSER_SESSION_HUB_KIOSK=true
+browser-session-hub
+```
+
+This is useful when embedding the preview in a frontend and you only want to show the rendered page without browser chrome.
+
+The environment variable sets the global default. Individual sessions can override it via the `kiosk` field in `POST /api/sessions`:
+
+```bash
+# Create a kiosk session even when the global default is off
+curl -s http://127.0.0.1:8091/api/sessions \
+  -H 'content-type: application/json' \
+  -d '{"owner_id": "alice", "start_url": "https://example.com", "kiosk": true}'
+```
+
+When `kiosk` is omitted or `null` in the request, the value from `BROWSER_SESSION_HUB_KIOSK` is used.
 
 ## Deployment Checklist
 

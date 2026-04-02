@@ -25,6 +25,13 @@ class CreateSessionRequest(BaseModel):
     viewport_width: int | None = Field(default=None, ge=320, le=3840)
     viewport_height: int | None = Field(default=None, ge=240, le=2160)
     persist_profile: bool = False
+    kiosk: bool | None = Field(
+        default=None,
+        description=(
+            "Launch Chrome in kiosk mode (fullscreen, no address bar or tabs). "
+            "When null, falls back to the BROWSER_SESSION_HUB_KIOSK environment variable."
+        ),
+    )
     metadata: dict[str, str] = Field(default_factory=dict)
 
 

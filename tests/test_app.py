@@ -34,8 +34,12 @@ def make_config(tmp_path: Path) -> BrowserSessionHubConfig:
         viewport_height=900,
         idle_timeout_seconds=0,
         no_sandbox=False,
+        kiosk=False,
         browser_extra_args=[],
         default_start_url="about:blank",
+        vnc_quality=9,
+        vnc_compress=0,
+        vnc_noxdamage=True,
     )
 
 

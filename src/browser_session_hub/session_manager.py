@@ -79,6 +79,7 @@ class ManagedSession:
     last_activity: float
     start_url: str
     persist_profile: bool
+    kiosk: bool
     working_dir: Path
     profile_dir: Path
     ports: SessionPorts
@@ -227,6 +228,7 @@ class BrowserSessionManager:
             now = time.time()
             viewport_width = request.viewport_width or self._config.viewport_width
             viewport_height = request.viewport_height or self._config.viewport_height
+            kiosk = request.kiosk if request.kiosk is not None else self._config.kiosk
             ports = self._allocate_ports_locked()
             working_dir = self._config.sessions_root / session_id
             logs_dir = working_dir / "logs"
@@ -260,6 +262,7 @@ class BrowserSessionManager:
                 last_activity=now,
                 start_url=start_url,
                 persist_profile=request.persist_profile,
+                kiosk=kiosk,
                 working_dir=working_dir,
                 profile_dir=profile_dir,
                 ports=ports,
@@ -441,6 +444,8 @@ class BrowserSessionManager:
         ]
         if self._config.no_sandbox:
             command.append("--no-sandbox")
+        if session.kiosk:
+            command.append("--kiosk")
         command.extend(self._config.browser_extra_args)
         command.append(session.start_url)
         process = subprocess.Popen(

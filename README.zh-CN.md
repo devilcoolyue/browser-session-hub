@@ -247,6 +247,7 @@ pid 文件: ~/.browser-session-hub/run/browser-session-hub.pid
 | `BROWSER_SESSION_HUB_VIEWPORT_HEIGHT` | `900` | 浏览器高度 |
 | `BROWSER_SESSION_HUB_IDLE_TIMEOUT` | `0` | 空闲超时秒数，`0` 表示关闭 |
 | `BROWSER_SESSION_HUB_NO_SANDBOX` | `false` | 必要时为 Chrome 增加 `--no-sandbox` |
+| `BROWSER_SESSION_HUB_KIOSK` | `false` | 以 kiosk 模式启动 Chrome（全屏，无地址栏和标签栏） |
 
 二进制路径覆盖变量：
 
@@ -280,6 +281,28 @@ export BROWSER_SESSION_HUB_LOG_FILE=/var/log/browser-session-hub/service.log
 export BROWSER_SESSION_HUB_PID_FILE=/var/run/browser-session-hub.pid
 browser-session-hub --daemon
 ```
+
+## Kiosk 模式
+
+设置 `BROWSER_SESSION_HUB_KIOSK=true` 后，Chrome 会以 kiosk 模式启动：全屏运行，没有地址栏、标签栏或任何浏览器 UI。noVNC 预览中只显示网页内容本身。
+
+```bash
+export BROWSER_SESSION_HUB_KIOSK=true
+browser-session-hub
+```
+
+适用场景：将预览嵌入前端页面时，只想展示渲染后的网页，不需要浏览器外框。
+
+环境变量设置的是全局默认值。单个会话可以通过 `POST /api/sessions` 的 `kiosk` 字段覆盖：
+
+```bash
+# 即使全局默认关闭，也可以为某个会话单独开启 kiosk
+curl -s http://127.0.0.1:8091/api/sessions \
+  -H 'content-type: application/json' \
+  -d '{"owner_id": "alice", "start_url": "https://example.com", "kiosk": true}'
+```
+
+请求中 `kiosk` 为 `null` 或不传时，使用 `BROWSER_SESSION_HUB_KIOSK` 环境变量的值。
 
 ## 部署检查清单
 
